@@ -8,4 +8,4 @@ RUN pip install -U setuptools pip
 # https://stackoverflow.com/questions/29905909/pip-install-e-packages-dont-appear-in-docker
 RUN pip install -r requirements.txt --src /usr/local/src
 COPY . .
-CMD ["python", "chat.py"]
+# CMD ["python", "chat.py"]
