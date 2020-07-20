@@ -4,6 +4,7 @@ services:
     build: .
     depends_on:
       - redis
+      - postgres
     ports:
       - "9080:9080"
       - "8081:8081"
@@ -12,11 +13,24 @@ services:
       - .:/code
     links:
       - "redis"
+      - "postgres"
   redis:
     image: "redis:6.0.5-alpine3.12"
     volumes:
       - redis-chat:/var/lib/redis
     ports:
       - "127.0.0.1:6379:6379"
+  postgres:
+    image: "postgres:12.3-alpine" # use latest official postgres version
+    environment:
+      - database.env # configure postgres
+      - POSTGRES_USER=ricardo
+      - POSTGRES_PASSWORD=ricardo
+      - POSTGRES_DB=chat_database
+    volumes:
+      - db-postgres-chat:/var/lib/postgresql/data/ # persist data even
+    ports:
+      - "127.0.0.1:5432:5432"
 volumes:
   redis-chat:
+  db-postgres-chat:
