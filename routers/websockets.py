@@ -17,14 +17,14 @@ REDIS_PORT = 6379
 XREAD_TIMEOUT = 0
 XREAD_COUNT = 100
 NUM_PREVIOUS = 30
-STREAM_MAX_LEN = 1000
+STREAM_MAX_LEN = 100
 ALLOWED_ROOMS = ['chat:1', 'chat:2', 'chat:3', 'chat:4', 'chat:5']
 PORT = 9080
 HOST = "0.0.0.0"
 router = APIRouter()
 
-cvar_tenant = contextvars.ContextVar('tenant', default=None)
-cvar_chat_info = contextvars.ContextVar('chat_info', default=None)
+cvar_tenant = contextvars.ContextVar[str]('tenant', default=None)
+cvar_chat_info = contextvars.ContextVar[dict]('chat_info', default=None)
 
 
 async def chat_info_vars(username: str = None, room: str = None) -> Dict[str, str]:
@@ -40,16 +40,19 @@ async def chat_info_vars(username: str = None, room: str = None) -> Dict[str, st
     return {"username": username, "room": room}
 
 
-async def verify_user_for_room(chat_info) -> bool:
+async def verify_user_for_room(chat_info: dict) -> bool:
+    """
+    Check for duplicated user names and if the room exist.
+    """
     verified = True
     pool: Redis = await get_redis_pool()
     if not pool:
         rprint('Redis connection failure')
         return False
     # check for duplicated user names
-    already_exists = await pool.sismember(cvar_tenant.get()+":users", cvar_chat_info.get()['username'])
+    already_exists = await pool.sismember(cvar_tenant.get() + ":users", cvar_chat_info.get()['username'])
     if already_exists:
-        rprint(chat_info['username'] +' user already_exists in ' + chat_info['room'])
+        rprint(chat_info['username'] + ' user already_exists in ' + chat_info['room'])
         verified = False
     # check for restricted names
 
@@ -64,12 +67,10 @@ async def verify_user_for_room(chat_info) -> bool:
 
 @router.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket, chat_info: dict = Depends(chat_info_vars)) -> None:
-    #rprint('request.hostname', websocket.url.hostname)
-    tenant_id: str = ":".join([websocket.url.hostname.replace('.', '_'),
-                          chat_info['room']])
+    tenant_id: str = ":".join([websocket.url.hostname.replace('.', '_'), chat_info['room']])
+    rprint("tenant_id: " + tenant_id)
     cvar_tenant.set(tenant_id)
     cvar_chat_info.set(chat_info)
-    rprint("tenant_id.set = " + tenant_id)
 
     # check the user is allowed into the chat room
     verified = await verify_user_for_room(chat_info)
@@ -100,7 +101,6 @@ async def websocket_moderator_endpoint(websocket: WebSocket, chat_info: dict = D
     await websocket.accept()
     # spin up coro's for inbound and outbound communication over the socket
     await asyncio.gather(ws_send_moderator(websocket, chat_info))
-
 
 
 async def get_redis_pool() -> Redis or None:
@@ -150,66 +150,6 @@ async def ws_send_moderator(websocket: WebSocket, chat_info: dict) -> None:
             ws_connected = False
 
 
-async def ws_send(websocket: WebSocket, chat_info: dict) -> None:
-    """
-    wait for new items on chat stream and
-    send data from server to client over a WebSocket
-
-    :param websocket:
-    :type websocket:
-    :param chat_info:
-    :type chat_info:
-    """
-    pool = await get_redis_pool()
-    latest_ids = ['$']
-    ws_connected = True
-    first_run = True
-    while pool and ws_connected:
-        try:
-            rprint("ws_send first line loop")
-            if first_run:
-                rprint("ws_send first_run")
-                # fetch some previous chat history
-                events = await pool.xrevrange(
-                    stream=cvar_tenant.get() + ":stream",
-                    count=NUM_PREVIOUS,
-                    start='+',
-                    stop='-'
-                )
-                first_run = False
-                events.reverse()
-                for e_id, e in events:
-                    e['e_id'] = e_id
-                    rprint("ws_send first_run" + str(e))
-                    await websocket.send_json(e)
-            else:
-                events = await pool.xread(
-                    streams=[cvar_tenant.get() + ":stream"],
-                    count=XREAD_COUNT,
-                    timeout=XREAD_TIMEOUT,
-                    latest_ids=latest_ids
-                )
-                # just for testing purposes
-                rprint("cvar_chat_info.get()['username'] = "+cvar_chat_info.get()['username'])
-                ####################################
-                for _, e_id, e in events:
-                    e['e_id'] = e_id
-                    rprint("ws_send else" + str(e))
-                    await websocket.send_json(e)
-                    latest_ids = [e_id]
-            rprint("ws_send last line loop")
-            #rprint('################contextvar ', cvar_tenant.get())
-        except ConnectionClosedError:
-            ws_connected = False
-
-        except ConnectionClosedOK:
-            ws_connected = False
-
-        except ServerConnectionClosedError:
-            rprint('redis server connection closed')
-            return
-    pool.close()
-
 async def ws_recieve(websocket: WebSocket, chat_info: dict) -> None:
     """
     receive json data from client over a WebSocket, add messages onto the
@@ -220,6 +160,7 @@ async def ws_recieve(websocket: WebSocket, chat_info: dict) -> None:
     :param chat_info:
     :type chat_info:
     """
+    rprint("ws_recieve first line")
     ws_connected = False
     pool: Redis = await get_redis_pool()
     added: int = await add_room_user(chat_info, pool)
@@ -263,15 +204,79 @@ async def ws_recieve(websocket: WebSocket, chat_info: dict) -> None:
     pool.close()
 
 
+async def ws_send(websocket: WebSocket, chat_info: dict) -> None:
+    """
+    wait for new items on chat stream and
+    send data from server to client over a WebSocket
+
+    :param websocket:
+    :type websocket:
+    :param chat_info:
+    :type chat_info:
+    """
+    rprint("ws_send first line")
+    pool = await get_redis_pool()
+    latest_ids = ['$']
+    ws_connected = True
+    first_run = True
+    while pool and ws_connected:
+        try:
+            rprint("ws_send first line loop")
+            if first_run:
+                rprint("ws_send first_run")
+                # fetch some previous chat history
+                events = await pool.xrevrange(
+                    stream=cvar_tenant.get() + ":stream",
+                    count=NUM_PREVIOUS,
+                    start='+',
+                    stop='-'
+                )
+                first_run = False
+                events.reverse()
+                for e_id, e in events:
+                    e['e_id'] = e_id
+                    rprint("ws_send first_run" + str(e))
+                    await websocket.send_json(e)
+            else:
+                events = await pool.xread(
+                    streams=[cvar_tenant.get() + ":stream"],
+                    count=XREAD_COUNT,
+                    timeout=XREAD_TIMEOUT,
+                    latest_ids=latest_ids
+                )
+                # just for testing purposes
+
+                rprint("ENVIANDO MENSAJES A: "+cvar_chat_info.get()['username'])
+                ####################################
+                for _, e_id, e in events:
+                    e['e_id'] = e_id
+                    rprint("ws_send e=" + str(e))
+                    await websocket.send_json(e)
+                    latest_ids = [e_id]
+                    rprint("ws_send latest_ids = " + str(latest_ids))
+            rprint("ws_send last line loop")
+            #rprint('################contextvar ', cvar_tenant.get())
+        except ConnectionClosedError:
+            ws_connected = False
+
+        except ConnectionClosedOK:
+            ws_connected = False
+
+        except ServerConnectionClosedError:
+            rprint('redis server connection closed')
+            return
+    pool.close()
+
+
 async def add_room_user(chat_info: dict, pool: Redis) -> int:
-    rprint("add_room_user " + str(dict))
-    #added = await pool.sadd(chat_info['room']+":users", chat_info['username'])
+    rprint("add_room_user " + str(chat_info))
+    #added; int = await pool.sadd(chat_info['room']+":users", chat_info['username'])
     added: int = await pool.sadd(cvar_tenant.get()+":users", cvar_chat_info.get()['username'])
     return added
 
 
 async def remove_room_user(chat_info: dict, pool: Redis) -> int:
-    rprint("remove_room_user " + str(dict))
+    rprint("remove_room_user " + str(chat_info))
     #removed = await pool.srem(chat_info['room']+":users", chat_info['username'])
     removed: int = await pool.srem(cvar_tenant.get()+":users", cvar_chat_info.get()['username'])
     return removed
