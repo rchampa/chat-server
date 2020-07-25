@@ -1,7 +1,7 @@
 FROM python:3.8-alpine
 WORKDIR /code
 # ENV FLASK_APP app.py
-RUN apk add --no-cache gcc musl-dev linux-headers make python3-dev openssl-dev libffi-dev git
+RUN apk add --no-cache gcc musl-dev linux-headers make python3-dev openssl-dev libffi-dev git postgresql-dev
 COPY requirements.txt requirements.txt
 RUN pip install -U setuptools pip
 # docker overwrites the src location for editable packages so we pass in a --src path that doesnt get blatted

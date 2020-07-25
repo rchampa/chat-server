@@ -8,6 +8,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.staticfiles import StaticFiles
 from RLog import rprint
 from routers import apirest, websockets
+from db.config import database
 
 REDIS_HOST = 'redis'
 REDIS_PORT = 6379
@@ -40,6 +41,7 @@ app.include_router(websockets.router)
 @app.on_event("startup")
 async def handle_startup() -> None:
     rprint("startup")
+    await database.connect()
     try:
         pool = await aioredis.create_redis_pool((REDIS_HOST, REDIS_PORT), encoding='utf-8', maxsize=20)
         cvar_redis.set(pool)
@@ -51,6 +53,8 @@ async def handle_startup() -> None:
 
 @app.on_event("shutdown")
 async def handle_shutdown() -> None:
+    await database.disconnect()
+    rprint("shutdown: database.disconnect")
     if cvar_redis.get() is not None:
         redis: Redis = cvar_redis.get()
         redis.close()
