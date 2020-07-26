@@ -1,7 +1,7 @@
 import asyncio
 import contextvars
 import uuid
-from typing import List, Dict
+from typing import List, Dict, Any
 
 import aioredis
 from aioredis import Redis
@@ -27,17 +27,15 @@ cvar_tenant = contextvars.ContextVar[str]('tenant', default=None)
 cvar_chat_info = contextvars.ContextVar[dict]('chat_info', default=None)
 
 
-async def chat_info_vars(username: str = None, room: str = None) -> Dict[str, str]:
+async def chat_info_vars(uuid: str, room: str) -> Dict[str, Any]:
     """
     URL parameter info needed for a user to participate in a chat
-    :param username:
-    :type username:
+    :param uuid:
+    :type uuid:
     :param room:
     :type room:
     """
-    if username is None and room is None:
-        return {"username": str(uuid.uuid4()), "room": 'chat:1'}
-    return {"username": username, "room": room}
+    return {"username": uuid, "room": room}
 
 
 async def verify_user_for_room(chat_info: dict) -> bool:

@@ -1,8 +1,12 @@
-from fastapi import APIRouter, Request, Response
-from starlette.templating import Jinja2Templates
 import os
 import socket
+
+from fastapi import APIRouter, Request, Response
+from pydantic import BaseModel
+from starlette.templating import Jinja2Templates
+
 from RLog import rprint
+from db.config import database, notes, users
 
 PORT = 9080
 router = APIRouter()
@@ -45,3 +49,14 @@ async def get(request: Request) -> Response:
                                       {"request": request,
                                        "ip": get_local_ip(),
                                        "port": PORT})
+
+
+class NewUser(BaseModel):
+    uuid: str
+
+
+@router.post("/user/new")
+async def post(new_user: NewUser) -> NewUser:
+    query = users.insert().values(uuid=new_user.uuid)
+    last_record_id = await database.execute(query)
+    return new_user
