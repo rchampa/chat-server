@@ -1,12 +1,14 @@
 import os
 import socket
+from typing import List
 
+import sqlalchemy
 from fastapi import APIRouter, Request, Response
 from pydantic import BaseModel
 from starlette.templating import Jinja2Templates
 
 from RLog import rprint
-from db.config import database, notes, users
+from db.config import database, users_table, User
 
 PORT = 9080
 router = APIRouter()
@@ -43,6 +45,15 @@ async def get(request: Request) -> Response:
                                        "port": PORT})
 
 
+@router.get("/chat2")
+async def get(request: Request) -> Response:
+    rprint("get request")
+    return templates.TemplateResponse("chat2.html",
+                                      {"request": request,
+                                       "ip": get_local_ip(),
+                                       "port": PORT})
+
+
 @router.get("/moderator")
 async def get(request: Request) -> Response:
     return templates.TemplateResponse("moderator_chat.html",
@@ -53,10 +64,27 @@ async def get(request: Request) -> Response:
 
 class NewUser(BaseModel):
     uuid: str
+    alias: str
 
 
 @router.post("/user/new")
 async def post(new_user: NewUser) -> NewUser:
-    query = users.insert().values(uuid=new_user.uuid)
+    query = users_table.insert().values(uuid=new_user.uuid, alias=new_user.alias)
     last_record_id = await database.execute(query)
     return new_user
+
+
+class RequestConnection(BaseModel):
+    uuid1: str
+    uuid2: str
+
+
+@router.post("/user", response_model=List[User])
+async def post(request: RequestConnection) -> List[User]:
+    """
+    https://docs.sqlalchemy.org/en/13/core/tutorial.html
+    """
+    stmt = sqlalchemy.sql.text("select * from users where uuid=:u1 or uuid=:u2")
+    stmt = stmt.bindparams(u1=request.uuid1, u2=request.uuid2)
+    results = await database.fetch_all(stmt)
+    return results
