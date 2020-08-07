@@ -90,31 +90,6 @@ async def chat_info_vars(uuid1: str, uuid2: str) -> Optional[Chat2]:
     return Chat2(_sql_to_user(result1), _sql_to_user(result2))
 
 
-# async def verify_user_for_room(chat_info: Chat2) -> bool:
-#     """
-#     Check for duplicated user names and if the room exist.
-#     """
-#     verified = True
-#     pool: Redis = await get_redis_pool()
-#     if not pool:
-#         rprint('Redis connection failure')
-#         return False
-#     # check for duplicated user names
-#     already_exists = await pool.sismember(cvar_tenant.get() + ":users", cvar_chat_info.get()['username'])
-#     if already_exists:
-#         rprint(chat_info['username'] + ' user already_exists in ' + chat_info['room'])
-#         verified = False
-#     # check for restricted names
-#
-#     # check for restricted rooms
-#     # check for non existent rooms
-#     # whitelist rooms
-#     if not chat_info['room'] in ALLOWED_ROOMS:
-#         verified = False
-#     pool.close()
-#     return verified
-
-
 @router.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket, chat_info: Optional[Chat2] = Depends(chat_info_vars)) -> None:
     if chat_info is None:
@@ -151,13 +126,10 @@ async def ws_recieve(websocket: WebSocket, chat_info: Chat2) -> None:
     :type Chat2:
     """
     rprint("ws_recieve first line")
-    ws_connected = False
     pool: Redis = await get_redis_pool()
-    # chat_info: Chat2 = cvar_chat_info.get()
     added: int = await add_connected_user(chat_info, pool)
-
     await announce(pool, chat_info, ConnectionState.CONNECTED)
-    ws_connected = True
+    ws_connected: bool = True
 
     while ws_connected:
         try:
@@ -202,7 +174,7 @@ async def ws_send(websocket: WebSocket, chat_info: Chat2) -> None:
     :type chat_info:
     """
     rprint("ws_send first line")
-    pool = await get_redis_pool()
+    pool: Redis = await get_redis_pool()
     latest_ids = ['$']
     ws_connected = True
     first_run = True
@@ -264,14 +236,6 @@ async def add_disconnected_user(chat_info: Chat2, pool: Redis) -> int:
     rprint("disconnected " + str(chat_info))
     removed: int = await pool.srem(f"{chat_info.tenant_id}:users", f"{chat_info.user1} disconnected at {datetime.utcnow()}")
     return removed
-
-
-# async def room_users(chat_info: dict, pool: Redis) -> List[str]:
-#     rprint("room_users " + str(dict))
-#     #users = await pool.smembers(chat_info['room']+":users")
-#     users = await pool.smembers(cvar_tenant.get()+":users")
-#     rprint(len(users))
-#     return users
 
 
 async def announce(pool: Redis, chat_info: Chat2, action: ConnectionState) -> None:

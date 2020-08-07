@@ -14,7 +14,7 @@ REDIS_HOST = 'redis'
 REDIS_PORT = 6379
 PORT = 9080
 HOST = "0.0.0.0"
-cvar_redis = contextvars.ContextVar('redis', default=None)
+cvar_redis = contextvars.ContextVar[Redis]('redis', default=None)
 
 
 class CustomHeaderMiddleware(BaseHTTPMiddleware):
